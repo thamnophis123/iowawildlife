@@ -6,10 +6,10 @@ export const maxDuration = 60;
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.6-flash",
+  "gemini-3.7-flash",
   "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-1.5-flash",
 ] as const;
 
 const ALLOWED_TYPES = new Set([
@@ -422,12 +422,15 @@ export async function POST(request: Request) {
       }
 
       if (!result.text) {
-        lastStatus = 502;
-        lastMessage =
-          result.body.candidates?.[0]?.finishReason === "SAFETY"
-            ? "Gemini blocked this photo."
-            : "Gemini returned an empty reply.";
-        break;
+        return NextResponse.json(
+          {
+            error:
+              result.body.candidates?.[0]?.finishReason === "SAFETY"
+                ? "Gemini blocked this photo."
+                : "Gemini returned an empty reply.",
+          },
+          { status: 502 },
+        );
       }
 
       const guess = guessFromText(result.text, model);
@@ -435,9 +438,10 @@ export async function POST(request: Request) {
         return NextResponse.json(guess);
       }
 
-      lastStatus = 502;
-      lastMessage = "Gemini returned a reply that could not be read.";
-      break;
+      return NextResponse.json(
+        { error: "Gemini returned a reply that could not be read." },
+        { status: 502 },
+      );
     }
   }
 
