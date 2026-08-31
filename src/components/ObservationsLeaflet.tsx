@@ -62,6 +62,12 @@ export default function ObservationsLeaflet({
                 {observation.createdAtLabel ? (
                   <p className="text-stone-500">{observation.createdAtLabel}</p>
                 ) : null}
+                <a
+                  href={`/sighting/${observation.id}`}
+                  className="inline-block font-medium text-[#2d6a4f] underline decoration-[#d8e3d4] underline-offset-4"
+                >
+                  View sighting
+                </a>
               </div>
             </Popup>
           </Marker>
