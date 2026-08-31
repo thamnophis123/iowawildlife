@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 
 :root {
   --background: #ffffff;
@@ -70,4 +71,31 @@ body {
 
 .iowa-wildlife-cluster span {
   line-height: 1;
+}
+
+.leaflet-container .marker-cluster-small {
+  background-color: rgba(45, 106, 79, 0.4);
+}
+
+.leaflet-container .marker-cluster-small div {
+  background-color: #2d6a4f;
+  color: #fbfaf6;
+}
+
+.leaflet-container .marker-cluster-medium {
+  background-color: rgba(27, 67, 50, 0.45);
+}
+
+.leaflet-container .marker-cluster-medium div {
+  background-color: #1b4332;
+  color: #fbfaf6;
+}
+
+.leaflet-container .marker-cluster-large {
+  background-color: rgba(27, 67, 50, 0.6);
+}
+
+.leaflet-container .marker-cluster-large div {
+  background-color: #1b4332;
+  color: #fbfaf6;
 }
