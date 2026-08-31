@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import exifr from "exifr";
@@ -14,7 +14,15 @@ import {
   type Category,
 } from "@/lib/categories";
 import type { SpeciesOption } from "@/lib/species";
+import { matchSpeciesByName, titleCaseCommonName } from "@/lib/species-names";
 import SpeciesSearch from "./SpeciesSearch";
+
+type IdentifyGuess = {
+  unknown: boolean;
+  common_name: string | null;
+  scientific_name: string | null;
+  confidence: number | null;
+};
 
 type LocationSource = "exif" | "map";
 
@@ -50,6 +58,9 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
   const [fuzzy, setFuzzy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [guess, setGuess] = useState<IdentifyGuess | null>(null);
+  const [guessPending, setGuessPending] = useState(false);
+  const identifyRequest = useRef(0);
 
   const locationLabel = useMemo(() => {
     if (!position) {
@@ -64,9 +75,91 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
     return `Pin from map: ${coords}`;
   }, [locationSource, position]);
 
+  const matchedGuess = useMemo(() => {
+    if (!guess || guess.unknown) {
+      return null;
+    }
+
+    return matchSpeciesByName(
+      speciesOptions,
+      guess.common_name,
+      guess.scientific_name,
+    );
+  }, [guess, speciesOptions]);
+
+  const guessLabel = guessPending
+    ? "identifying…"
+    : !guess || guess.unknown
+      ? "unknown"
+      : titleCaseCommonName(
+          guess.common_name || guess.scientific_name || "unknown",
+        );
+
+  async function requestIdentify(nextFile: File, coords: LatLng | null) {
+    const requestId = identifyRequest.current + 1;
+    identifyRequest.current = requestId;
+    setGuess(null);
+    setGuessPending(true);
+
+    try {
+      const body = new FormData();
+      body.append("photo", nextFile);
+      if (coords) {
+        body.append("lat", String(coords.lat));
+        body.append("lng", String(coords.lng));
+      }
+
+      const response = await fetch("/api/identify", {
+        method: "POST",
+        body,
+      });
+      const payload = (await response.json()) as IdentifyGuess & {
+        error?: string;
+      };
+
+      if (identifyRequest.current !== requestId) {
+        return;
+      }
+
+      if (!response.ok) {
+        setGuess({
+          unknown: true,
+          common_name: null,
+          scientific_name: null,
+          confidence: null,
+        });
+        return;
+      }
+
+      setGuess({
+        unknown: Boolean(payload.unknown),
+        common_name: payload.common_name,
+        scientific_name: payload.scientific_name,
+        confidence: payload.confidence,
+      });
+    } catch {
+      if (identifyRequest.current !== requestId) {
+        return;
+      }
+
+      setGuess({
+        unknown: true,
+        common_name: null,
+        scientific_name: null,
+        confidence: null,
+      });
+    } finally {
+      if (identifyRequest.current === requestId) {
+        setGuessPending(false);
+      }
+    }
+  }
+
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const nextFile = event.target.files?.[0] ?? null;
     setError(null);
+    setGuess(null);
+    identifyRequest.current += 1;
     setFile(nextFile);
     setPreviewUrl((current) => {
       if (current) {
@@ -76,16 +169,21 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
     });
 
     if (!nextFile) {
+      setGuessPending(false);
       return;
     }
 
     if (!photoExtension(nextFile)) {
       setFile(null);
       setPreviewUrl(null);
+      setGuessPending(false);
       setError("Choose a JPEG, PNG, WebP, or HEIC photo.");
       return;
     }
 
+    setGuessPending(true);
+
+    let coords = position;
     try {
       const gps = await exifr.gps(nextFile);
       if (
@@ -93,13 +191,16 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
         typeof gps.latitude === "number" &&
         typeof gps.longitude === "number"
       ) {
-        setPosition({ lat: gps.latitude, lng: gps.longitude });
-        setFocusPosition({ lat: gps.latitude, lng: gps.longitude });
+        coords = { lat: gps.latitude, lng: gps.longitude };
+        setPosition(coords);
+        setFocusPosition(coords);
         setLocationSource("exif");
       }
     } catch {
       // EXIF is optional; the user can still drop a pin on the map.
     }
+
+    await requestIdentify(nextFile, coords);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -163,6 +264,13 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
         lng_precise: position.lng,
         lat_public: publicCoords.lat,
         lng_public: publicCoords.lng,
+        suggested_name: guess
+          ? guess.unknown
+            ? "unknown"
+            : guess.common_name || guess.scientific_name
+          : null,
+        suggestion_confidence: guess?.confidence ?? null,
+        suggestion_source: guess ? "gemini" : null,
       });
 
       if (insertError) {
@@ -232,6 +340,29 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
           onChange={(event) => setNotes(event.target.value)}
         />
       </label>
+
+      {file ? (
+        <div className="rounded-lg border border-[#d8e3d4] bg-white px-3 py-3">
+          <p className="text-sm text-[#1b4332]">
+            AI guess: {guessLabel}
+          </p>
+          <p className="mt-1 text-sm text-stone-600">Not confirmed.</p>
+          {matchedGuess && speciesId !== matchedGuess.id ? (
+            <button
+              type="button"
+              className="mt-3 rounded-lg border border-[#1b4332] px-3 py-1.5 text-sm font-medium text-[#1b4332] hover:bg-[#eef4ee]"
+              onClick={() => {
+                setSpeciesId(matchedGuess.id);
+                if (isCategory(matchedGuess.category)) {
+                  setCategory(matchedGuess.category);
+                }
+              }}
+            >
+              Accept AI guess
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div>
         <label

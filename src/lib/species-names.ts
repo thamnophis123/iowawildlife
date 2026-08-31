@@ -88,3 +88,35 @@ export function dedupeSpeciesByScientificName<T extends SpeciesNameRow>(
 
   return [...byScientificName.values(), ...withoutScientificName];
 }
+
+export function matchSpeciesByName<
+  T extends { commonName: string; scientificName: string | null },
+>(
+  species: T[],
+  commonName: string | null,
+  scientificName: string | null,
+): T | null {
+  const common = commonName?.trim().toLowerCase() ?? "";
+  const scientific = scientificName?.trim().toLowerCase() ?? "";
+
+  if (
+    (!common && !scientific) ||
+    common === "unknown" ||
+    scientific === "unknown"
+  ) {
+    return null;
+  }
+
+  return (
+    species.find((item) => {
+      const itemCommon = item.commonName.toLowerCase();
+      const itemScientific = item.scientificName?.toLowerCase() ?? "";
+
+      return (
+        (common && (itemCommon === common || itemScientific === common)) ||
+        (scientific &&
+          (itemScientific === scientific || itemCommon === scientific))
+      );
+    }) ?? null
+  );
+}

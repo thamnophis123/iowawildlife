@@ -52,6 +52,12 @@ export default function SpeciesSearch({
   const optionCount = 1 + matches.length;
 
   useEffect(() => {
+    if (selectedId && selectedLabel) {
+      setQuery(selectedLabel);
+    }
+  }, [selectedId, selectedLabel]);
+
+  useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false);
