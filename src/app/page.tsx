@@ -15,9 +15,9 @@ const cards = [
 
 export default function Home() {
   return (
-    <div className="flex min-h-full flex-1 flex-col bg-[#f6f3ec] font-sans text-stone-700">
+    <div className="flex flex-1 flex-col">
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-16 sm:px-8">
-        <header className="mb-12">
+        <div className="mb-12">
           <h1 className="text-4xl font-semibold tracking-tight text-[#1b4332] sm:text-5xl">
             Iowa Wildlife
           </h1>
@@ -28,7 +28,7 @@ export default function Home() {
             People can upload wildlife photos, drop them on a map, comment, and
             filter by species.
           </p>
-        </header>
+        </div>
 
         <section
           aria-label="What you can do"
