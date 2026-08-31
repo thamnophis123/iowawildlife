@@ -9,7 +9,8 @@ import { categoryLabel } from "@/lib/categories";
 import { titleCaseCommonName } from "@/lib/species-names";
 import { IOWA_CENTER } from "@/lib/geo";
 import "leaflet/dist/leaflet.css";
-import "react-leaflet-cluster/dist/assets/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 
 type SelectionSource = "list" | "map";
 
@@ -28,17 +29,6 @@ function pinIcon(selected: boolean) {
       : '<span class="iowa-wildlife-pin-dot"></span>',
     iconSize: selected ? [26, 26] : [22, 22],
     iconAnchor: selected ? [13, 26] : [11, 22],
-  });
-}
-
-function clusterIcon(cluster: L.MarkerCluster) {
-  const count = cluster.getChildCount();
-  const size = count < 10 ? 36 : count < 50 ? 44 : 52;
-
-  return L.divIcon({
-    className: "iowa-wildlife-cluster",
-    html: `<span>${count}</span>`,
-    iconSize: [size, size],
   });
 }
 
@@ -152,7 +142,6 @@ export default function ObservationsLeaflet({
             color: "#1b4332",
             opacity: 0.55,
           }}
-          iconCreateFunction={clusterIcon}
         >
           {observations.map((observation) => {
             const selected = observation.id === selectedId;
