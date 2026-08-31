@@ -62,6 +62,7 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [fuzzy, setFuzzy] = useState(false);
   const [ignoreOutOfState, setIgnoreOutOfState] = useState(false);
+  const [exifOutOfState, setExifOutOfState] = useState<LatLng | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [guess, setGuess] = useState<IdentifyGuess | null>(null);
@@ -70,22 +71,31 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
   const identifyRequest = useRef(0);
 
   const locationLabel = useMemo(() => {
-    if (!position) {
-      return "No pin yet. Click the map or choose a photo with GPS.";
+    if (position && isInsideIowa(position.lat, position.lng)) {
+      const coords = `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}`;
+      if (locationSource === "exif") {
+        return `Pin from photo GPS: ${coords}`;
+      }
+      return `Pin from map: ${coords}`;
     }
 
-    const coords = `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}`;
-    if (locationSource === "exif") {
-      return `Pin from photo GPS: ${coords}`;
+    if (exifOutOfState && ignoreOutOfState) {
+      return `Using photo GPS outside Iowa: ${exifOutOfState.lat.toFixed(5)}, ${exifOutOfState.lng.toFixed(5)}`;
     }
 
-    return `Pin from map: ${coords}`;
-  }, [locationSource, position]);
+    if (exifOutOfState) {
+      return "This photo's location data is not in Iowa. Iowa Wildlife only maps Iowa sightings. Place a pin in Iowa to continue.";
+    }
 
-  const outsideIowa = Boolean(
-    position && !isInsideIowa(position.lat, position.lng),
-  );
-  const locationBlocked = outsideIowa && !ignoreOutOfState;
+    return "This photo has no location. Drop a pin where the animal was seen in Iowa.";
+  }, [exifOutOfState, ignoreOutOfState, locationSource, position]);
+
+  const iowaPin =
+    position && isInsideIowa(position.lat, position.lng) ? position : null;
+  const overridePin =
+    ignoreOutOfState && exifOutOfState ? exifOutOfState : null;
+  const submitPosition = iowaPin ?? overridePin;
+  const locationBlocked = Boolean(file) && !submitPosition;
 
   const matchedGuess = useMemo(() => {
     if (!guess || guess.unknown) {
@@ -193,6 +203,8 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
 
     if (!nextFile) {
       setGuessPending(false);
+      setExifOutOfState(null);
+      setIgnoreOutOfState(false);
       return;
     }
 
@@ -206,7 +218,10 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
 
     setGuessPending(true);
 
-    let coords = position;
+    let gpsCoords: LatLng | null = null;
+    setIgnoreOutOfState(false);
+    setExifOutOfState(null);
+
     try {
       const gps = await exifr.gps(nextFile);
       if (
@@ -214,19 +229,28 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
         typeof gps.latitude === "number" &&
         typeof gps.longitude === "number"
       ) {
-        coords = { lat: gps.latitude, lng: gps.longitude };
-        setPosition(coords);
-        setFocusPosition(coords);
-        setLocationSource("exif");
-        if (isInsideIowa(coords.lat, coords.lng)) {
-          setIgnoreOutOfState(false);
-        }
+        gpsCoords = { lat: gps.latitude, lng: gps.longitude };
       }
     } catch {
       // EXIF is optional; the user can still drop a pin on the map.
     }
 
-    await requestIdentify(nextFile, coords);
+    if (gpsCoords && isInsideIowa(gpsCoords.lat, gpsCoords.lng)) {
+      setPosition(gpsCoords);
+      setFocusPosition(gpsCoords);
+      setLocationSource("exif");
+    } else if (gpsCoords) {
+      setExifOutOfState(gpsCoords);
+      setPosition(null);
+      setFocusPosition(null);
+      setLocationSource(null);
+    } else if (locationSource === "exif") {
+      setPosition(null);
+      setFocusPosition(null);
+      setLocationSource(null);
+    }
+
+    await requestIdentify(nextFile, gpsCoords);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -244,15 +268,19 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
       return;
     }
 
-    if (!position || !locationSource) {
-      setError("Drop a pin on the map before submitting.");
+    if (!submitPosition) {
+      setError(
+        exifOutOfState
+          ? "This photo's location data is not in Iowa. Iowa Wildlife only maps Iowa sightings. Place a pin in Iowa to continue."
+          : "This photo has no location. Drop a pin where the animal was seen in Iowa.",
+      );
       return;
     }
 
-    if (!isInsideIowa(position.lat, position.lng) && !ignoreOutOfState) {
-      setError("This location looks outside Iowa.");
-      return;
-    }
+    const usingOutOfStateOverride = Boolean(overridePin && !iowaPin);
+    const submitSource: LocationSource = iowaPin
+      ? locationSource ?? "map"
+      : "exif";
 
     setPending(true);
 
@@ -279,20 +307,20 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
       }
 
       const publicCoords = fuzzy
-        ? offsetCoordinates(position.lat, position.lng)
-        : position;
+        ? offsetCoordinates(submitPosition.lat, submitPosition.lng)
+        : submitPosition;
 
       const { error: insertError } = await supabase.from("observations").insert({
         user_id: user.id,
         photo_path: photoPath,
-        notes: notesWithOutOfStateOverride(notes, ignoreOutOfState && outsideIowa),
+        notes: notesWithOutOfStateOverride(notes, usingOutOfStateOverride),
         category,
         species_id: speciesId || null,
         is_anonymous: isAnonymous,
         geoprivacy: fuzzy ? "fuzzy" : "precise",
-        location_source: locationSource,
-        lat_precise: position.lat,
-        lng_precise: position.lng,
+        location_source: submitSource,
+        lat_precise: submitPosition.lat,
+        lng_precise: submitPosition.lng,
         lat_public: publicCoords.lat,
         lng_public: publicCoords.lng,
         suggested_name: guess
@@ -362,20 +390,40 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
             }}
           />
         </div>
-        {outsideIowa ? (
+        {exifOutOfState && !iowaPin ? (
           <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3">
             <p className="text-sm text-amber-900">
-              This location looks outside Iowa.
+              This photo's location data is not in Iowa. Iowa Wildlife only maps
+              Iowa sightings. Place a pin in Iowa to continue.
             </p>
-            <label className="mt-2 flex items-center gap-2 text-sm text-[#1b4332]">
+            <label className="mt-2 flex items-start gap-2 text-sm text-[#1b4332]">
               <input
+                className="mt-0.5"
                 type="checkbox"
                 checked={ignoreOutOfState}
-                onChange={(event) => setIgnoreOutOfState(event.target.checked)}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setIgnoreOutOfState(checked);
+                  if (checked && exifOutOfState) {
+                    setPosition(exifOutOfState);
+                    setFocusPosition(exifOutOfState);
+                    setLocationSource("exif");
+                  } else if (!checked && locationSource === "exif") {
+                    setPosition(null);
+                    setFocusPosition(null);
+                    setLocationSource(null);
+                  }
+                }}
               />
-              Ignore location and post anyway.
+              Post anyway with this out-of-state location.
             </label>
           </div>
+        ) : null}
+        {file && !exifOutOfState && !iowaPin ? (
+          <p className="mt-3 text-sm text-amber-900">
+            This photo has no location. Drop a pin where the animal was seen in
+            Iowa.
+          </p>
         ) : null}
       </div>
 
