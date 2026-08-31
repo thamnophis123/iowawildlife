@@ -1,5 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
+import {
+  dedupeSpeciesByScientificName,
+  titleCaseCommonName,
+} from "@/lib/species-names";
 
 export type SpeciesOption = {
   id: string;
@@ -7,6 +11,7 @@ export type SpeciesOption = {
   scientificName: string | null;
   category: string;
   slug: string | null;
+  inatTaxonId: number | null;
 };
 
 export type SpeciesSighting = {
@@ -62,21 +67,22 @@ export async function getSpeciesOptions(): Promise<SpeciesOption[]> {
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from("species")
-      .select("id, common_name, scientific_name, category, slug")
+      .select("id, common_name, scientific_name, category, slug, inat_taxon_id")
       .order("common_name", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error || !data) {
-      return options;
+      break;
     }
 
     for (const row of data) {
       options.push({
         id: row.id,
-        commonName: row.common_name,
+        commonName: titleCaseCommonName(row.common_name),
         scientificName: row.scientific_name,
         category: row.category,
         slug: row.slug,
+        inatTaxonId: row.inat_taxon_id,
       });
     }
 
@@ -85,7 +91,9 @@ export async function getSpeciesOptions(): Promise<SpeciesOption[]> {
     }
   }
 
-  return options;
+  return dedupeSpeciesByScientificName(options).sort((a, b) =>
+    a.commonName.localeCompare(b.commonName, "en"),
+  );
 }
 
 export async function getSpeciesBySlug(

@@ -22,8 +22,11 @@ type Category = (typeof ICONIC_TAXA)[number]["category"];
 type InatTaxon = {
   id: number;
   name: string;
+  rank?: string | null;
   preferred_common_name?: string | null;
 };
+
+const SKIP_RANKS = new Set(["subspecies", "variety"]);
 
 type SpeciesCountsResponse = {
   total_results: number;
@@ -91,6 +94,7 @@ async function fetchSpeciesCountsPage(
   url.searchParams.set("iconic_taxon_id", String(taxonId));
   // species_counts ignores iconic_taxon_id; taxon_id limits to that clade.
   url.searchParams.set("taxon_id", String(taxonId));
+  url.searchParams.set("rank", "species");
   url.searchParams.set("per_page", String(PER_PAGE));
   url.searchParams.set("page", String(page));
 
@@ -200,6 +204,10 @@ export async function GET(request: Request) {
         for (const result of payload.results ?? []) {
           const taxon = result.taxon;
           if (!taxon?.id || !taxon.name) {
+            continue;
+          }
+
+          if (taxon.rank && SKIP_RANKS.has(taxon.rank)) {
             continue;
           }
 

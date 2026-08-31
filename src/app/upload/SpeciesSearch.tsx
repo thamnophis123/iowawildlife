@@ -2,6 +2,10 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SpeciesOption } from "@/lib/species";
+import {
+  dedupeSpeciesByScientificName,
+  titleCaseCommonName,
+} from "@/lib/species-names";
 
 const UNKNOWN_LABEL = "Not sure / unknown";
 
@@ -28,7 +32,10 @@ export default function SpeciesSearch({
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const selected = species.find((item) => item.id === selectedId) ?? null;
-  const [query, setQuery] = useState(selected?.commonName ?? "");
+  const selectedLabel = selected
+    ? titleCaseCommonName(selected.commonName)
+    : "";
+  const [query, setQuery] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -38,17 +45,8 @@ export default function SpeciesSearch({
       return [];
     }
 
-    const found: SpeciesOption[] = [];
-    for (const item of species) {
-      if (!matchesQuery(item, trimmed)) {
-        continue;
-      }
-      found.push(item);
-      if (found.length >= 15) {
-        break;
-      }
-    }
-    return found;
+    const found = species.filter((item) => matchesQuery(item, trimmed));
+    return dedupeSpeciesByScientificName(found).slice(0, 15);
   }, [query, species]);
 
   const optionCount = 1 + matches.length;
@@ -72,7 +70,7 @@ export default function SpeciesSearch({
   }
 
   function chooseSpecies(item: SpeciesOption) {
-    setQuery(item.commonName);
+    setQuery(titleCaseCommonName(item.commonName));
     setOpen(false);
     setActiveIndex(0);
     onSelect(item);
@@ -82,7 +80,7 @@ export default function SpeciesSearch({
     setQuery(value);
     setOpen(true);
     setActiveIndex(0);
-    if (selected && value !== selected.commonName) {
+    if (selected && value !== selectedLabel) {
       onSelect(null);
     }
   }
@@ -145,7 +143,7 @@ export default function SpeciesSearch({
       />
       <p className="mt-1 text-sm text-stone-600">
         {selected
-          ? `${selected.commonName}${selected.scientificName ? ` (${selected.scientificName})` : ""}`
+          ? `${selectedLabel}${selected.scientificName ? ` (${selected.scientificName})` : ""}`
           : UNKNOWN_LABEL}
       </p>
       {open ? (
@@ -183,7 +181,9 @@ export default function SpeciesSearch({
                 onMouseEnter={() => setActiveIndex(optionIndex)}
                 onClick={() => chooseSpecies(item)}
               >
-                <span className="font-medium">{item.commonName}</span>
+                <span className="font-medium">
+                  {titleCaseCommonName(item.commonName)}
+                </span>
                 {item.scientificName ? (
                   <span className="ml-2 italic text-stone-500">
                     {item.scientificName}
