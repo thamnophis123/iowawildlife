@@ -20,13 +20,17 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   other: "Other (crustacean, mollusk, etc.)",
 };
 
+export function isCategory(value: string): value is Category {
+  return (CATEGORIES as readonly string[]).includes(value);
+}
+
 export function categoryLabel(value: string | null | undefined) {
   if (!value) {
     return "";
   }
 
-  if (value in CATEGORY_LABELS) {
-    return CATEGORY_LABELS[value as Category];
+  if (isCategory(value)) {
+    return CATEGORY_LABELS[value];
   }
 
   return value;

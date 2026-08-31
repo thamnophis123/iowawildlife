@@ -4,6 +4,9 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
 export type SpeciesOption = {
   id: string;
   commonName: string;
+  scientificName: string | null;
+  category: string;
+  slug: string | null;
 };
 
 export type SpeciesSighting = {
@@ -53,19 +56,36 @@ export async function getSpeciesOptions(): Promise<SpeciesOption[]> {
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("species")
-    .select("id, common_name")
-    .order("common_name", { ascending: true });
+  const pageSize = 1000;
+  const options: SpeciesOption[] = [];
 
-  if (error || !data) {
-    return [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("species")
+      .select("id, common_name, scientific_name, category, slug")
+      .order("common_name", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error || !data) {
+      return options;
+    }
+
+    for (const row of data) {
+      options.push({
+        id: row.id,
+        commonName: row.common_name,
+        scientificName: row.scientific_name,
+        category: row.category,
+        slug: row.slug,
+      });
+    }
+
+    if (data.length < pageSize) {
+      break;
+    }
   }
 
-  return data.map((row) => ({
-    id: row.id,
-    commonName: row.common_name,
-  }));
+  return options;
 }
 
 export async function getSpeciesBySlug(

@@ -7,12 +7,19 @@ import exifr from "exifr";
 import { createClient } from "@/lib/supabase/client";
 import { offsetCoordinates, type LatLng } from "@/lib/geo";
 import { PHOTO_ACCEPT, photoExtension } from "@/lib/photo";
-import { CATEGORIES, CATEGORY_LABELS, type Category } from "@/lib/categories";
+import {
+  CATEGORIES,
+  CATEGORY_LABELS,
+  isCategory,
+  type Category,
+} from "@/lib/categories";
+import type { SpeciesOption } from "@/lib/species";
+import SpeciesSearch from "./SpeciesSearch";
 
 type LocationSource = "exif" | "map";
 
 type UploadFormProps = {
-  speciesOptions: { id: string; commonName: string }[];
+  speciesOptions: SpeciesOption[];
 };
 
 const fieldClassName =
@@ -228,48 +235,54 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
 
       <div>
         <label
+          htmlFor="species"
+          className="block text-sm font-medium text-[#1b4332]"
+        >
+          Species
+        </label>
+        <p className="mt-1 text-sm text-stone-600">
+          Search by name, or choose Not sure / unknown.
+        </p>
+        <SpeciesSearch
+          species={speciesOptions}
+          selectedId={speciesId}
+          onSelect={(item) => {
+            if (!item) {
+              setSpeciesId("");
+              return;
+            }
+
+            setSpeciesId(item.id);
+            if (isCategory(item.category)) {
+              setCategory(item.category);
+            }
+          }}
+        />
+      </div>
+
+      <div>
+        <label
           htmlFor="category"
           className="block text-sm font-medium text-[#1b4332]"
         >
           Category
         </label>
         <p className="mt-1 text-sm text-stone-600">
-          Choose the group this animal belongs to.
+          {speciesId
+            ? "Filled from the species you chose."
+            : "Choose the group this animal belongs to."}
         </p>
         <select
           id="category"
-          className={fieldClassName}
+          className={`${fieldClassName} disabled:bg-[#fbfaf6] disabled:text-stone-500`}
           name="category"
           value={category}
+          disabled={Boolean(speciesId)}
           onChange={(event) => setCategory(event.target.value as Category)}
         >
           {CATEGORIES.map((item) => (
             <option key={item} value={item}>
               {CATEGORY_LABELS[item]}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label
-          htmlFor="species"
-          className="block text-sm font-medium text-[#1b4332]"
-        >
-          Species
-        </label>
-        <p className="mt-1 text-sm text-stone-600">Optional.</p>
-        <select
-          id="species"
-          className={fieldClassName}
-          name="species"
-          value={speciesId}
-          onChange={(event) => setSpeciesId(event.target.value)}
-        >
-          <option value="">Not sure</option>
-          {speciesOptions.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.commonName}
             </option>
           ))}
         </select>
