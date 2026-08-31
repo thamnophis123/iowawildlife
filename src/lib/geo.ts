@@ -7,6 +7,62 @@ export type LatLng = {
 
 export const IOWA_CENTER: LatLng = { lat: 42.0, lng: -93.5 };
 
+export const IOWA_BOUNDS = {
+  minLat: 40.3,
+  maxLat: 43.6,
+  minLng: -96.7,
+  maxLng: -90.1,
+};
+
+export const OUT_OF_STATE_NOTE =
+  "Posted with an out-of-state location override.";
+
+export function isInsideIowa(lat: number, lng: number) {
+  return (
+    lat >= IOWA_BOUNDS.minLat &&
+    lat <= IOWA_BOUNDS.maxLat &&
+    lng >= IOWA_BOUNDS.minLng &&
+    lng <= IOWA_BOUNDS.maxLng
+  );
+}
+
+export function notesWithOutOfStateOverride(
+  notes: string,
+  override: boolean,
+) {
+  const trimmed = notes.trim();
+  if (!override) {
+    return trimmed || null;
+  }
+
+  if (!trimmed) {
+    return OUT_OF_STATE_NOTE;
+  }
+
+  if (trimmed.includes(OUT_OF_STATE_NOTE)) {
+    return trimmed;
+  }
+
+  return `${trimmed}\n\n${OUT_OF_STATE_NOTE}`;
+}
+
+export function splitOutOfStateNote(notes: string | null) {
+  if (!notes) {
+    return { notes: null, outOfStateOverride: false };
+  }
+
+  const outOfStateOverride = notes.includes(OUT_OF_STATE_NOTE);
+  const cleaned = notes
+    .replace(OUT_OF_STATE_NOTE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return {
+    notes: cleaned || null,
+    outOfStateOverride,
+  };
+}
+
 export function offsetCoordinates(
   lat: number,
   lng: number,

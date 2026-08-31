@@ -102,6 +102,12 @@ export default async function SightingPage({ params }: SightingPageProps) {
         {sighting.createdAtLabel ? ` · ${sighting.createdAtLabel}` : ""}
       </p>
 
+      {sighting.outOfStateOverride ? (
+        <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Posted with an out-of-state location override.
+        </p>
+      ) : null}
+
       {sighting.photoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img

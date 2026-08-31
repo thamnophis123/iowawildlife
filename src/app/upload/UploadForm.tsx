@@ -5,8 +5,9 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import exifr from "exifr";
 import { createClient } from "@/lib/supabase/client";
-import { offsetCoordinates, type LatLng } from "@/lib/geo";
+import { offsetCoordinates, isInsideIowa, notesWithOutOfStateOverride, type LatLng } from "@/lib/geo";
 import { PHOTO_ACCEPT, photoExtension } from "@/lib/photo";
+import { resizeImageForIdentify } from "@/lib/resize-photo";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -60,6 +61,7 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
   const [speciesId, setSpeciesId] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [fuzzy, setFuzzy] = useState(false);
+  const [ignoreOutOfState, setIgnoreOutOfState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [guess, setGuess] = useState<IdentifyGuess | null>(null);
@@ -79,6 +81,11 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
 
     return `Pin from map: ${coords}`;
   }, [locationSource, position]);
+
+  const outsideIowa = Boolean(
+    position && !isInsideIowa(position.lat, position.lng),
+  );
+  const locationBlocked = outsideIowa && !ignoreOutOfState;
 
   const matchedGuess = useMemo(() => {
     if (!guess || guess.unknown) {
@@ -110,8 +117,15 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
     setGuessPending(true);
 
     try {
+      let identifyFile: File;
+      try {
+        identifyFile = await resizeImageForIdentify(nextFile);
+      } catch {
+        identifyFile = nextFile;
+      }
+
       const body = new FormData();
-      body.append("photo", nextFile);
+      body.append("photo", identifyFile);
       if (coords) {
         body.append("lat", String(coords.lat));
         body.append("lng", String(coords.lng));
@@ -130,7 +144,11 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
       if (!response.ok) {
         setGuess(null);
         setIdentifyError(
-          payload.error || `Identification failed (HTTP ${response.status}).`,
+          response.status === 413 ||
+            /too large|413/i.test(payload.error ?? "")
+            ? "Photo too large for AI guess"
+            : payload.error ||
+              `Identification failed (HTTP ${response.status}).`,
         );
         return;
       }
@@ -200,6 +218,9 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
         setPosition(coords);
         setFocusPosition(coords);
         setLocationSource("exif");
+        if (isInsideIowa(coords.lat, coords.lng)) {
+          setIgnoreOutOfState(false);
+        }
       }
     } catch {
       // EXIF is optional; the user can still drop a pin on the map.
@@ -225,6 +246,11 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
 
     if (!position || !locationSource) {
       setError("Drop a pin on the map before submitting.");
+      return;
+    }
+
+    if (!isInsideIowa(position.lat, position.lng) && !ignoreOutOfState) {
+      setError("This location looks outside Iowa.");
       return;
     }
 
@@ -259,7 +285,7 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
       const { error: insertError } = await supabase.from("observations").insert({
         user_id: user.id,
         photo_path: photoPath,
-        notes: notes.trim() || null,
+        notes: notesWithOutOfStateOverride(notes, ignoreOutOfState && outsideIowa),
         category,
         species_id: speciesId || null,
         is_anonymous: isAnonymous,
@@ -330,9 +356,27 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
             onUserSetPosition={(next) => {
               setPosition(next);
               setLocationSource("map");
+              if (isInsideIowa(next.lat, next.lng)) {
+                setIgnoreOutOfState(false);
+              }
             }}
           />
         </div>
+        {outsideIowa ? (
+          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3">
+            <p className="text-sm text-amber-900">
+              This location looks outside Iowa.
+            </p>
+            <label className="mt-2 flex items-center gap-2 text-sm text-[#1b4332]">
+              <input
+                type="checkbox"
+                checked={ignoreOutOfState}
+                onChange={(event) => setIgnoreOutOfState(event.target.checked)}
+              />
+              Ignore location and post anyway.
+            </label>
+          </div>
+        ) : null}
       </div>
 
       <label className="block text-sm font-medium text-[#1b4332]">
@@ -452,7 +496,7 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || locationBlocked}
         className="rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-[#fbfaf6] hover:bg-[#163828] disabled:opacity-60"
       >
         {pending ? "Saving…" : "Save sighting"}

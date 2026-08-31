@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
+import { splitOutOfStateNote } from "@/lib/geo";
 
 export type MapObservation = {
   id: string;
@@ -49,6 +50,7 @@ export type SightingDetail = {
   createdAtLabel: string | null;
   observerName: string;
   suggestedName: string | null;
+  outOfStateOverride: boolean;
   displayedSpecies: SightingSpecies | null;
   identifications: SightingIdentification[];
   comments: SightingComment[];
@@ -353,15 +355,18 @@ export async function getSighting(
     : (observation.user_id && names.get(observation.user_id)) ||
       "Community member";
 
+  const { notes, outOfStateOverride } = splitOutOfStateNote(observation.notes);
+
   return {
     sighting: {
       id: observation.id,
       photoUrl: photoUrlFor(supabase, observation.photo_path),
-      notes: observation.notes,
+      notes,
       category: observation.category,
       createdAtLabel: formatDate(observation.created_at),
       observerName,
       suggestedName: observation.suggested_name,
+      outOfStateOverride,
       displayedSpecies,
       identifications: identificationRows.map((row) => {
         const species = speciesById.get(row.species_id);
