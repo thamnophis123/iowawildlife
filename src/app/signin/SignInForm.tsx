@@ -45,7 +45,7 @@ export default function SignInForm() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/upload`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 
