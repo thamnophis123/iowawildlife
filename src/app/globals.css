@@ -24,3 +24,26 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+  font-family: inherit;
+}
+
+.iowa-wildlife-pin {
+  background: transparent;
+  border: none;
+}
+
+.iowa-wildlife-pin-dot {
+  display: block;
+  width: 18px;
+  height: 18px;
+  background: #1b4332;
+  border: 2px solid #fbfaf6;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}

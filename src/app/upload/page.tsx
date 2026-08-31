@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/supabase/server";
+import UploadForm from "./UploadForm";
 
 export const metadata: Metadata = {
   title: "Upload a sighting",
@@ -36,8 +37,9 @@ export default async function UploadPage() {
         Upload a sighting
       </h1>
       <p className="mt-4 max-w-xl text-base leading-7 text-stone-600">
-        Photos and location will go here.
+        Add a photo and drop a pin where you found it.
       </p>
+      <UploadForm />
     </main>
   );
 }
