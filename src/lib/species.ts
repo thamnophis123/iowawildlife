@@ -19,6 +19,8 @@ export type SpeciesSighting = {
   photoUrl: string | null;
   createdAtLabel: string | null;
   category: string | null;
+  lat: number | null;
+  lng: number | null;
 };
 
 export type SpeciesDetail = {
@@ -27,7 +29,13 @@ export type SpeciesDetail = {
   commonName: string;
   scientificName: string | null;
   category: string;
+  status: string | null;
   shortSummary: string | null;
+  idTips: string | null;
+  habitat: string | null;
+  similarSpecies: string | null;
+  sourceUrls: string[];
+  inatTaxonId: number | null;
   isSensitive: boolean;
   sightings: SpeciesSighting[];
 };
@@ -53,6 +61,35 @@ function photoUrlFor(
   }
 
   return supabase.storage.from("photos").getPublicUrl(photoPath).data.publicUrl;
+}
+
+function textOrNull(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function numberOrNull(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function sourceUrlsFrom(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 export async function getSpeciesOptions(): Promise<SpeciesOption[]> {
@@ -111,7 +148,7 @@ export async function getSpeciesBySlug(
   const { data: row, error } = await supabase
     .from("species")
     .select(
-      "id, slug, common_name, scientific_name, category, short_summary, is_sensitive",
+      "id, slug, common_name, scientific_name, category, status, short_summary, id_tips, habitat, similar_species, source_urls, inat_taxon_id, is_sensitive",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -126,10 +163,10 @@ export async function getSpeciesBySlug(
 
   const { data: observations, error: observationsError } = await supabase
     .from("observations")
-    .select("id, photo_path, created_at, category")
+    .select("id, photo_path, created_at, category, lat_public, lng_public")
     .eq("species_id", row.id)
     .order("created_at", { ascending: false })
-    .limit(24);
+    .limit(12);
 
   if (observationsError) {
     return { species: null, error: observationsError.message };
@@ -140,15 +177,23 @@ export async function getSpeciesBySlug(
       id: row.id,
       slug: row.slug,
       commonName: row.common_name,
-      scientificName: row.scientific_name,
+      scientificName: textOrNull(row.scientific_name),
       category: row.category,
-      shortSummary: row.short_summary,
+      status: textOrNull(row.status),
+      shortSummary: textOrNull(row.short_summary),
+      idTips: textOrNull(row.id_tips),
+      habitat: textOrNull(row.habitat),
+      similarSpecies: textOrNull(row.similar_species),
+      sourceUrls: sourceUrlsFrom(row.source_urls),
+      inatTaxonId: numberOrNull(row.inat_taxon_id),
       isSensitive: Boolean(row.is_sensitive),
       sightings: (observations ?? []).map((observation) => ({
         id: observation.id,
         photoUrl: photoUrlFor(supabase, observation.photo_path),
         createdAtLabel: formatDate(observation.created_at),
         category: observation.category,
+        lat: numberOrNull(observation.lat_public),
+        lng: numberOrNull(observation.lng_public),
       })),
     },
     error: null,
