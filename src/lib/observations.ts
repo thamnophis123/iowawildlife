@@ -10,6 +10,10 @@ export type MapObservation = {
   category: string | null;
   isAnonymous: boolean;
   createdAtLabel: string | null;
+  speciesCommonName: string | null;
+  speciesScientificName: string | null;
+  speciesSlug: string | null;
+  suggestedName: string | null;
 };
 
 export type SightingComment = {
@@ -163,17 +167,75 @@ export async function getMapObservations(): Promise<{
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("observations")
-    .select(
-      "id, lat_public, lng_public, photo_path, notes, category, is_anonymous, created_at",
-    );
+  const pageSize = 1000;
+  const rows: {
+    id: string;
+    lat_public: number;
+    lng_public: number;
+    photo_path: string | null;
+    notes: string | null;
+    category: string | null;
+    is_anonymous: boolean;
+    created_at: string | null;
+    species_id: string | null;
+    suggested_name: string | null;
+  }[] = [];
 
-  if (error) {
-    return { observations: [], error: error.message };
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("observations")
+      .select(
+        "id, lat_public, lng_public, photo_path, notes, category, is_anonymous, created_at, species_id, suggested_name",
+      )
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      return { observations: [], error: error.message };
+    }
+
+    if (!data?.length) {
+      break;
+    }
+
+    for (const row of data) {
+      rows.push(row);
+    }
+
+    if (data.length < pageSize) {
+      break;
+    }
   }
 
-  const observations = (data ?? [])
+  const speciesIds = [
+    ...new Set(
+      rows
+        .map((row) => row.species_id)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+
+  const speciesById = new Map<
+    string,
+    { common_name: string; scientific_name: string | null; slug: string | null }
+  >();
+
+  if (speciesIds.length > 0) {
+    const { data: speciesRows, error: speciesError } = await supabase
+      .from("species")
+      .select("id, common_name, scientific_name, slug")
+      .in("id", speciesIds);
+
+    if (speciesError) {
+      return { observations: [], error: speciesError.message };
+    }
+
+    for (const species of speciesRows ?? []) {
+      speciesById.set(species.id, species);
+    }
+  }
+
+  const observations = rows
     .map((row) => {
       if (
         typeof row.lat_public !== "number" ||
@@ -181,6 +243,8 @@ export async function getMapObservations(): Promise<{
       ) {
         return null;
       }
+
+      const species = row.species_id ? speciesById.get(row.species_id) : null;
 
       return {
         id: row.id,
@@ -191,6 +255,10 @@ export async function getMapObservations(): Promise<{
         category: row.category,
         isAnonymous: Boolean(row.is_anonymous),
         createdAtLabel: formatDate(row.created_at),
+        speciesCommonName: species?.common_name ?? null,
+        speciesScientificName: species?.scientific_name ?? null,
+        speciesSlug: species?.slug ?? null,
+        suggestedName: row.suggested_name,
       } satisfies MapObservation;
     })
     .filter((row): row is MapObservation => row !== null);
