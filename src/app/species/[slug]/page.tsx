@@ -201,16 +201,18 @@ export default async function SpeciesPage({ params }: SpeciesPageProps) {
                     className="block overflow-hidden rounded-xl border border-[#d8e3d4] bg-[#fbfaf6] hover:border-[#2d6a4f]"
                   >
                     {sighting.photoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={sighting.photoUrl}
-                        alt={
-                          categoryLabel(sighting.category) || commonName
-                        }
-                        className="h-52 w-full object-cover"
-                      />
+                      <div className="flex max-h-[260px] items-center justify-center bg-stone-200">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={sighting.photoUrl}
+                          alt={
+                            categoryLabel(sighting.category) || commonName
+                          }
+                          className="h-auto max-h-[260px] w-auto max-w-full object-contain"
+                        />
+                      </div>
                     ) : (
-                      <div className="flex h-52 items-center justify-center text-sm text-stone-500">
+                      <div className="flex h-40 items-center justify-center bg-stone-200 text-sm text-stone-500">
                         No photo
                       </div>
                     )}
