@@ -9,10 +9,8 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
-import type { LatLng } from "@/lib/geo";
+import { IOWA_CENTER, type LatLng } from "@/lib/geo";
 import "leaflet/dist/leaflet.css";
-
-export const IOWA_CENTER: LatLng = { lat: 42.0, lng: -93.5 };
 
 type SightingMapProps = {
   position: LatLng | null;

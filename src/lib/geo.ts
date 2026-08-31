@@ -5,6 +5,8 @@ export type LatLng = {
   lng: number;
 };
 
+export const IOWA_CENTER: LatLng = { lat: 42.0, lng: -93.5 };
+
 export function offsetCoordinates(
   lat: number,
   lng: number,
