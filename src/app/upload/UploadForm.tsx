@@ -7,19 +7,8 @@ import exifr from "exifr";
 import { createClient } from "@/lib/supabase/client";
 import { offsetCoordinates, type LatLng } from "@/lib/geo";
 import { PHOTO_ACCEPT, photoExtension } from "@/lib/photo";
+import { CATEGORIES, CATEGORY_LABELS, type Category } from "@/lib/categories";
 
-const CATEGORIES = [
-  "bird",
-  "mammal",
-  "reptile",
-  "amphibian",
-  "fish",
-  "insect",
-  "plant",
-  "other",
-] as const;
-
-type Category = (typeof CATEGORIES)[number];
 type LocationSource = "exif" | "map";
 
 const fieldClassName =
@@ -231,9 +220,18 @@ export default function UploadForm() {
         />
       </label>
 
-      <label className="block text-sm font-medium text-[#1b4332]">
-        Category
+      <div>
+        <label
+          htmlFor="category"
+          className="block text-sm font-medium text-[#1b4332]"
+        >
+          Category
+        </label>
+        <p className="mt-1 text-sm text-stone-600">
+          Choose the group this animal belongs to.
+        </p>
         <select
+          id="category"
           className={fieldClassName}
           name="category"
           value={category}
@@ -241,11 +239,11 @@ export default function UploadForm() {
         >
           {CATEGORIES.map((item) => (
             <option key={item} value={item}>
-              {item}
+              {CATEGORY_LABELS[item]}
             </option>
           ))}
         </select>
-      </label>
+      </div>
 
       <label className="flex items-center gap-2 text-sm text-[#1b4332]">
         <input

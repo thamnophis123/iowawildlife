@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import CommentForm from "./CommentForm";
 import { getSighting } from "@/lib/observations";
+import { categoryLabel } from "@/lib/categories";
 import { getCurrentUser } from "@/lib/supabase/server";
 
 type SightingPageProps = {
@@ -21,7 +22,7 @@ export async function generateMetadata({
 
   return {
     title: sighting.category
-      ? `${sighting.category} sighting`
+      ? `${categoryLabel(sighting.category)} sighting`
       : "Sighting",
   };
 }
@@ -58,8 +59,8 @@ export default async function SightingPage({ params }: SightingPageProps) {
           Back to map
         </Link>
       </p>
-      <h1 className="mt-4 text-4xl font-semibold tracking-tight text-[#1b4332] capitalize">
-        {sighting.category ?? "Sighting"}
+      <h1 className="mt-4 text-4xl font-semibold tracking-tight text-[#1b4332]">
+        {categoryLabel(sighting.category) || "Sighting"}
       </h1>
       <p className="mt-2 text-sm text-stone-500">
         {sighting.observerName}
@@ -70,7 +71,7 @@ export default async function SightingPage({ params }: SightingPageProps) {
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={sighting.photoUrl}
-          alt={sighting.category ?? "Sighting"}
+          alt={categoryLabel(sighting.category) || "Sighting"}
           className="mt-8 w-full rounded-xl border border-[#d8e3d4] object-cover"
         />
       ) : null}

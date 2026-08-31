@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import type { MapObservation } from "@/lib/observations";
+import { categoryLabel } from "@/lib/categories";
 import { IOWA_CENTER } from "@/lib/geo";
 import "leaflet/dist/leaflet.css";
 
@@ -49,13 +50,13 @@ export default function ObservationsLeaflet({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={observation.photoUrl}
-                    alt={observation.category ?? "Sighting"}
+                    alt={categoryLabel(observation.category) || "Sighting"}
                     className="max-h-40 w-full rounded object-cover"
                   />
                 ) : null}
                 {observation.category ? (
-                  <p className="font-medium capitalize text-[#1b4332]">
-                    {observation.category}
+                  <p className="font-medium text-[#1b4332]">
+                    {categoryLabel(observation.category)}
                   </p>
                 ) : null}
                 {observation.notes ? <p>{observation.notes}</p> : null}

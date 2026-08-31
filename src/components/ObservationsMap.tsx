@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { CATEGORIES } from "@/lib/categories";
+import { CATEGORIES, CATEGORY_LABELS } from "@/lib/categories";
 import type { MapObservation } from "@/lib/observations";
 
 const ObservationsLeaflet = dynamic(
@@ -48,7 +48,7 @@ export default function ObservationsMap({ observations }: ObservationsMapProps) 
           <option value="all">All</option>
           {CATEGORIES.map((item) => (
             <option key={item} value={item}>
-              {item}
+              {CATEGORY_LABELS[item]}
             </option>
           ))}
         </select>
