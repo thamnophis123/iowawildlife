@@ -24,6 +24,10 @@ type IdentifyGuess = {
   confidence: number | null;
 };
 
+type IdentifyResponse = IdentifyGuess & {
+  error?: string;
+};
+
 type LocationSource = "exif" | "map";
 
 type UploadFormProps = {
@@ -60,6 +64,7 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
   const [pending, setPending] = useState(false);
   const [guess, setGuess] = useState<IdentifyGuess | null>(null);
   const [guessPending, setGuessPending] = useState(false);
+  const [identifyError, setIdentifyError] = useState<string | null>(null);
   const identifyRequest = useRef(0);
 
   const locationLabel = useMemo(() => {
@@ -89,16 +94,19 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
 
   const guessLabel = guessPending
     ? "identifying…"
-    : !guess || guess.unknown
+    : guess?.unknown
       ? "unknown"
-      : titleCaseCommonName(
-          guess.common_name || guess.scientific_name || "unknown",
-        );
+      : guess
+        ? titleCaseCommonName(
+            guess.common_name || guess.scientific_name || "unknown",
+          )
+        : null;
 
   async function requestIdentify(nextFile: File, coords: LatLng | null) {
     const requestId = identifyRequest.current + 1;
     identifyRequest.current = requestId;
     setGuess(null);
+    setIdentifyError(null);
     setGuessPending(true);
 
     try {
@@ -113,21 +121,17 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
         method: "POST",
         body,
       });
-      const payload = (await response.json()) as IdentifyGuess & {
-        error?: string;
-      };
+      const payload = (await response.json().catch(() => ({}))) as IdentifyResponse;
 
       if (identifyRequest.current !== requestId) {
         return;
       }
 
       if (!response.ok) {
-        setGuess({
-          unknown: true,
-          common_name: null,
-          scientific_name: null,
-          confidence: null,
-        });
+        setGuess(null);
+        setIdentifyError(
+          payload.error || `Identification failed (HTTP ${response.status}).`,
+        );
         return;
       }
 
@@ -137,17 +141,17 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
         scientific_name: payload.scientific_name,
         confidence: payload.confidence,
       });
-    } catch {
+    } catch (identifyRequestError) {
       if (identifyRequest.current !== requestId) {
         return;
       }
 
-      setGuess({
-        unknown: true,
-        common_name: null,
-        scientific_name: null,
-        confidence: null,
-      });
+      setGuess(null);
+      setIdentifyError(
+        identifyRequestError instanceof Error
+          ? identifyRequestError.message
+          : "Identification failed.",
+      );
     } finally {
       if (identifyRequest.current === requestId) {
         setGuessPending(false);
@@ -159,6 +163,7 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
     const nextFile = event.target.files?.[0] ?? null;
     setError(null);
     setGuess(null);
+    setIdentifyError(null);
     identifyRequest.current += 1;
     setFile(nextFile);
     setPreviewUrl((current) => {
@@ -343,24 +348,30 @@ export default function UploadForm({ speciesOptions }: UploadFormProps) {
 
       {file ? (
         <div className="rounded-lg border border-[#d8e3d4] bg-white px-3 py-3">
-          <p className="text-sm text-[#1b4332]">
-            AI guess: {guessLabel}
-          </p>
-          <p className="mt-1 text-sm text-stone-600">Not confirmed.</p>
-          {matchedGuess && speciesId !== matchedGuess.id ? (
-            <button
-              type="button"
-              className="mt-3 rounded-lg border border-[#1b4332] px-3 py-1.5 text-sm font-medium text-[#1b4332] hover:bg-[#eef4ee]"
-              onClick={() => {
-                setSpeciesId(matchedGuess.id);
-                if (isCategory(matchedGuess.category)) {
-                  setCategory(matchedGuess.category);
-                }
-              }}
-            >
-              Accept AI guess
-            </button>
-          ) : null}
+          {identifyError ? (
+            <p className="text-sm text-red-700">{identifyError}</p>
+          ) : (
+            <>
+              <p className="text-sm text-[#1b4332]">
+                AI guess: {guessLabel ?? "identifying…"}
+              </p>
+              <p className="mt-1 text-sm text-stone-600">Not confirmed.</p>
+              {matchedGuess && speciesId !== matchedGuess.id ? (
+                <button
+                  type="button"
+                  className="mt-3 rounded-lg border border-[#1b4332] px-3 py-1.5 text-sm font-medium text-[#1b4332] hover:bg-[#eef4ee]"
+                  onClick={() => {
+                    setSpeciesId(matchedGuess.id);
+                    if (isCategory(matchedGuess.category)) {
+                      setCategory(matchedGuess.category);
+                    }
+                  }}
+                >
+                  Accept AI guess
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
 

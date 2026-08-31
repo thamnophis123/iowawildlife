@@ -5,7 +5,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_BYTES = 8 * 1024 * 1024;
-const MODELS = ["gemini-2.5-flash-lite", "gemini-2.0-flash"] as const;
+const MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-1.5-flash",
+] as const;
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -15,13 +20,10 @@ const ALLOWED_TYPES = new Set([
   "image/heif",
 ]);
 
-const PROMPT = `This is a wild animal photo from Iowa.
-Return JSON only with this shape:
-{"common_name": string, "scientific_name": string, "confidence": number}
-or {"unknown": true}.
-confidence is a number from 0 to 1.
-Do not invent species that are not plausible for Iowa.
-If you are unsure, return unknown.`;
+const PROMPT = `Identify the animal in this photo if reasonably possible.
+Use unknown only when it is not an organism or the photo is unusable.
+Prefer species that occur in Iowa.
+Return JSON only: { "common_name": "...", "scientific_name": "...", "confidence": 0.0 }`;
 
 type IdentifyResult = {
   unknown: boolean;
@@ -29,6 +31,14 @@ type IdentifyResult = {
   scientific_name: string | null;
   confidence: number | null;
   model: string;
+};
+
+type GeminiBody = {
+  error?: { message?: string; status?: string };
+  candidates?: {
+    finishReason?: string;
+    content?: { parts?: { text?: string }[] };
+  }[];
 };
 
 async function requireUser() {
@@ -49,8 +59,12 @@ function parseCoordinate(value: FormDataEntryValue | null) {
 }
 
 function mimeTypeFor(file: File) {
-  if (ALLOWED_TYPES.has(file.type)) {
-    return file.type;
+  const rawType = file.type.toLowerCase();
+  if (rawType === "image/jpg" || rawType === "image/pjpeg") {
+    return "image/jpeg";
+  }
+  if (ALLOWED_TYPES.has(rawType)) {
+    return rawType;
   }
 
   const name = file.name.toLowerCase();
@@ -73,42 +87,112 @@ function mimeTypeFor(file: File) {
   return null;
 }
 
-function parseModelJson(text: string) {
+function stringField(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseConfidence(value: unknown) {
+  const raw =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(raw)) {
+    return null;
+  }
+
+  const scaled = raw > 1 && raw <= 100 ? raw / 100 : raw;
+  return Math.min(1, Math.max(0, scaled));
+}
+
+function extractJsonObject(text: string) {
   const trimmed = text
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "");
-  return JSON.parse(trimmed) as Record<string, unknown>;
+
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start === -1 || end <= start) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1)) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function nameFromPlainText(text: string) {
+  const cleaned = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const lines = text
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^[\s>*#-]+/, "")
+        .replace(/\*+/g, "")
+        .replace(/^["']|["']$/g, "")
+        .trim(),
+    )
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (/^unknown$/i.test(line)) {
+      continue;
+    }
+    if (line.length > 80 || /[{}]/.test(line)) {
+      continue;
+    }
+    if (/^(here|json|response|the photo|identify)\b/i.test(line)) {
+      continue;
+    }
+
+    return line
+      .replace(/^(it |this )?(is|looks like|appears to be)\s+/i, "")
+      .replace(/\.$/, "")
+      .trim();
+  }
+
+  if (
+    cleaned &&
+    cleaned.length <= 80 &&
+    !/[{}]/.test(cleaned) &&
+    !/^unknown$/i.test(cleaned)
+  ) {
+    return cleaned;
+  }
+
+  return null;
 }
 
 function normalizeGuess(
   parsed: Record<string, unknown>,
   model: string,
-): IdentifyResult {
-  const unknownFlag = parsed.unknown === true;
+): IdentifyResult | null {
   const common =
-    typeof parsed.common_name === "string" ? parsed.common_name.trim() : "";
+    stringField(parsed.common_name) || stringField(parsed.commonName);
   const scientific =
-    typeof parsed.scientific_name === "string"
-      ? parsed.scientific_name.trim()
-      : "";
-  const confidenceRaw =
-    typeof parsed.confidence === "number"
-      ? parsed.confidence
-      : typeof parsed.confidence === "string"
-        ? Number(parsed.confidence)
-        : null;
-  const confidence =
-    confidenceRaw != null && Number.isFinite(confidenceRaw)
-      ? Math.min(1, Math.max(0, confidenceRaw))
-      : null;
-
-  const isUnknown =
-    unknownFlag ||
+    stringField(parsed.scientific_name) || stringField(parsed.scientificName);
+  const confidence = parseConfidence(parsed.confidence);
+  const looksUnknown =
+    parsed.unknown === true ||
     common.toLowerCase() === "unknown" ||
-    (!common && !scientific);
+    scientific.toLowerCase() === "unknown";
 
-  if (isUnknown) {
+  if (looksUnknown && !scientific && (common.toLowerCase() === "unknown" || !common)) {
     return {
       unknown: true,
       common_name: null,
@@ -118,23 +202,57 @@ function normalizeGuess(
     };
   }
 
+  if (!common && !scientific) {
+    return null;
+  }
+
   return {
     unknown: false,
-    common_name: common || null,
-    scientific_name: scientific || null,
+    common_name: common && common.toLowerCase() !== "unknown" ? common : null,
+    scientific_name:
+      scientific && scientific.toLowerCase() !== "unknown" ? scientific : null,
     confidence,
     model,
   };
 }
 
-function geminiText(payload: {
-  candidates?: { content?: { parts?: { text?: string }[] } }[];
-}) {
+function guessFromText(text: string, model: string): IdentifyResult | null {
+  const parsed = extractJsonObject(text);
+  if (parsed) {
+    const fromJson = normalizeGuess(parsed, model);
+    if (fromJson) {
+      return fromJson;
+    }
+  }
+
+  const plain = nameFromPlainText(text);
+  if (!plain) {
+    return null;
+  }
+
+  return {
+    unknown: false,
+    common_name: plain,
+    scientific_name: null,
+    confidence: null,
+    model,
+  };
+}
+
+function geminiText(payload: GeminiBody) {
   const parts = payload.candidates?.[0]?.content?.parts ?? [];
   return parts
     .map((part) => part.text ?? "")
     .join("")
     .trim();
+}
+
+function isMissingModel(status: number, body: GeminiBody) {
+  return (
+    status === 404 ||
+    body.error?.status === "NOT_FOUND" ||
+    /not found|is not found/i.test(body.error?.message ?? "")
+  );
 }
 
 async function callGemini(params: {
@@ -144,11 +262,17 @@ async function callGemini(params: {
   base64: string;
   lat: number | null;
   lng: number | null;
+  jsonMode: boolean;
 }) {
   const locationLine =
     params.lat != null && params.lng != null
       ? `\nThe photo was taken near latitude ${params.lat}, longitude ${params.lng}.`
       : "";
+
+  const generationConfig: Record<string, unknown> = { temperature: 0.2 };
+  if (params.jsonMode) {
+    generationConfig.responseMimeType = "application/json";
+  }
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${params.model}:generateContent`,
@@ -164,28 +288,34 @@ async function callGemini(params: {
             parts: [
               { text: `${PROMPT}${locationLine}` },
               {
-                inline_data: {
-                  mime_type: params.mimeType,
+                inlineData: {
+                  mimeType: params.mimeType,
                   data: params.base64,
                 },
               },
             ],
           },
         ],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: "application/json",
-        },
+        generationConfig,
       }),
     },
   );
 
-  const body = (await response.json()) as {
-    error?: { message?: string; status?: string };
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
+  const raw = await response.text();
+  let body: GeminiBody = {};
+  try {
+    body = JSON.parse(raw) as GeminiBody;
+  } catch {
+    body = { error: { message: raw.slice(0, 500) } };
+  }
 
-  return { ok: response.ok, status: response.status, body };
+  const text = geminiText(body);
+  console.info(
+    `[identify] Gemini ${params.model} HTTP ${response.status}${params.jsonMode ? "" : " (text mode)"}`,
+  );
+  console.info(`[identify] raw text reply: ${text || raw.slice(0, 4000)}`);
+
+  return { ok: response.ok, status: response.status, body, text, raw };
 }
 
 export async function GET() {
@@ -244,51 +374,70 @@ export async function POST(request: Request) {
   let lastMessage = "Species identification failed.";
 
   for (const model of MODELS) {
-    const result = await callGemini({
-      apiKey,
-      model,
-      mimeType,
-      base64,
-      lat,
-      lng,
-    });
+    const modes = [true, false];
 
-    const missingModel =
-      result.status === 404 ||
-      result.body.error?.status === "NOT_FOUND" ||
-      /not found|not supported/i.test(result.body.error?.message ?? "");
+    for (const jsonMode of modes) {
+      const result = await callGemini({
+        apiKey,
+        model,
+        mimeType,
+        base64,
+        lat,
+        lng,
+        jsonMode,
+      });
 
-    if (!result.ok && missingModel && model !== MODELS[MODELS.length - 1]) {
-      continue;
-    }
+      if (!result.ok && isMissingModel(result.status, result.body)) {
+        lastStatus = result.status;
+        lastMessage = result.body.error?.message || `${model} was not found.`;
+        break;
+      }
 
-    if (!result.ok) {
-      lastStatus = result.status >= 400 ? result.status : 502;
-      lastMessage = result.body.error?.message || lastMessage;
+      if (result.status === 401 || result.status === 403) {
+        return NextResponse.json(
+          {
+            error:
+              result.body.error?.message ||
+              "Gemini rejected the API key.",
+          },
+          { status: result.status },
+        );
+      }
+
+      if (
+        !result.ok &&
+        jsonMode &&
+        result.status === 400 &&
+        /mime|json|schema/i.test(result.body.error?.message ?? "")
+      ) {
+        continue;
+      }
+
+      if (!result.ok) {
+        lastStatus = result.status >= 400 ? result.status : 502;
+        lastMessage =
+          result.body.error?.message ||
+          `Gemini returned HTTP ${result.status}.`;
+        break;
+      }
+
+      if (!result.text) {
+        lastStatus = 502;
+        lastMessage =
+          result.body.candidates?.[0]?.finishReason === "SAFETY"
+            ? "Gemini blocked this photo."
+            : "Gemini returned an empty reply.";
+        break;
+      }
+
+      const guess = guessFromText(result.text, model);
+      if (guess) {
+        return NextResponse.json(guess);
+      }
+
+      lastStatus = 502;
+      lastMessage = "Gemini returned a reply that could not be read.";
       break;
-    }
-
-    const text = geminiText(result.body);
-    if (!text) {
-      return NextResponse.json({
-        unknown: true,
-        common_name: null,
-        scientific_name: null,
-        confidence: null,
-        model,
-      } satisfies IdentifyResult);
-    }
-
-    try {
-      return NextResponse.json(normalizeGuess(parseModelJson(text), model));
-    } catch {
-      return NextResponse.json({
-        unknown: true,
-        common_name: null,
-        scientific_name: null,
-        confidence: null,
-        model,
-      } satisfies IdentifyResult);
     }
   }
 
