@@ -66,6 +66,16 @@ export default async function SightingPage({ params }: SightingPageProps) {
         {sighting.observerName}
         {sighting.createdAtLabel ? ` · ${sighting.createdAtLabel}` : ""}
       </p>
+      {sighting.speciesSlug && sighting.speciesCommonName ? (
+        <p className="mt-3 text-sm">
+          <Link
+            href={`/species/${sighting.speciesSlug}`}
+            className="font-medium text-[#2d6a4f] underline decoration-[#d8e3d4] underline-offset-4 hover:text-[#1b4332]"
+          >
+            {sighting.speciesCommonName}
+          </Link>
+        </p>
+      ) : null}
 
       {sighting.photoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { getSpeciesOptions } from "@/lib/species";
 import UploadForm from "./UploadForm";
 
 export const metadata: Metadata = {
@@ -8,7 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default async function UploadPage() {
-  const user = await getCurrentUser();
+  const [user, speciesOptions] = await Promise.all([
+    getCurrentUser(),
+    getSpeciesOptions(),
+  ]);
 
   if (!user) {
     return (
@@ -39,7 +43,7 @@ export default async function UploadPage() {
       <p className="mt-4 max-w-xl text-base leading-7 text-stone-600">
         Add a photo and drop a pin where you found it.
       </p>
-      <UploadForm />
+      <UploadForm speciesOptions={speciesOptions} />
     </main>
   );
 }

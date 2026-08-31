@@ -11,6 +11,10 @@ import { CATEGORIES, CATEGORY_LABELS, type Category } from "@/lib/categories";
 
 type LocationSource = "exif" | "map";
 
+type UploadFormProps = {
+  speciesOptions: { id: string; commonName: string }[];
+};
+
 const fieldClassName =
   "mt-1 w-full rounded-lg border border-[#d8e3d4] bg-white px-3 py-2 text-stone-800 outline-none focus:border-[#2d6a4f]";
 
@@ -23,7 +27,7 @@ const SightingMap = dynamic(() => import("@/components/SightingMap"), {
   ),
 });
 
-export default function UploadForm() {
+export default function UploadForm({ speciesOptions }: UploadFormProps) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -34,6 +38,7 @@ export default function UploadForm() {
   );
   const [notes, setNotes] = useState("");
   const [category, setCategory] = useState<Category>("bird");
+  const [speciesId, setSpeciesId] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [fuzzy, setFuzzy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,6 +148,7 @@ export default function UploadForm() {
         photo_path: photoPath,
         notes: notes.trim() || null,
         category,
+        species_id: speciesId || null,
         is_anonymous: isAnonymous,
         geoprivacy: fuzzy ? "fuzzy" : "precise",
         location_source: locationSource,
@@ -240,6 +246,30 @@ export default function UploadForm() {
           {CATEGORIES.map((item) => (
             <option key={item} value={item}>
               {CATEGORY_LABELS[item]}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label
+          htmlFor="species"
+          className="block text-sm font-medium text-[#1b4332]"
+        >
+          Species
+        </label>
+        <p className="mt-1 text-sm text-stone-600">Optional.</p>
+        <select
+          id="species"
+          className={fieldClassName}
+          name="species"
+          value={speciesId}
+          onChange={(event) => setSpeciesId(event.target.value)}
+        >
+          <option value="">Not sure</option>
+          {speciesOptions.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.commonName}
             </option>
           ))}
         </select>

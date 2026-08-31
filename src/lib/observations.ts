@@ -26,6 +26,8 @@ export type SightingDetail = {
   category: string | null;
   createdAtLabel: string | null;
   observerName: string;
+  speciesSlug: string | null;
+  speciesCommonName: string | null;
   comments: SightingComment[];
 };
 
@@ -126,7 +128,7 @@ export async function getSighting(
   const { data: observation, error: observationError } = await supabase
     .from("observations")
     .select(
-      "id, user_id, photo_path, notes, category, is_anonymous, created_at",
+      "id, user_id, photo_path, notes, category, is_anonymous, created_at, species_id",
     )
     .eq("id", id)
     .maybeSingle();
@@ -160,6 +162,22 @@ export async function getSighting(
   ];
   const names = await displayNamesByUserId(supabase, profileIds);
 
+  let speciesSlug: string | null = null;
+  let speciesCommonName: string | null = null;
+
+  if (observation.species_id) {
+    const { data: species } = await supabase
+      .from("species")
+      .select("slug, common_name")
+      .eq("id", observation.species_id)
+      .maybeSingle();
+
+    if (species?.slug) {
+      speciesSlug = species.slug;
+      speciesCommonName = species.common_name;
+    }
+  }
+
   const observerName = observation.is_anonymous
     ? "Anonymous"
     : (observation.user_id && names.get(observation.user_id)) ||
@@ -173,6 +191,8 @@ export async function getSighting(
       category: observation.category,
       createdAtLabel: formatDate(observation.created_at),
       observerName,
+      speciesSlug,
+      speciesCommonName,
       comments: commentRows.map((comment) => ({
         id: comment.id,
         body: comment.body,
