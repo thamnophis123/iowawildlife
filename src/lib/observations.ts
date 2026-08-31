@@ -19,6 +19,24 @@ export type SightingComment = {
   authorName: string;
 };
 
+export type SightingSpecies = {
+  id: string;
+  commonName: string;
+  scientificName: string | null;
+  slug: string | null;
+};
+
+export type SightingIdentification = {
+  id: string;
+  speciesId: string;
+  commonName: string;
+  scientificName: string | null;
+  slug: string | null;
+  note: string | null;
+  authorName: string;
+  createdAtLabel: string | null;
+};
+
 export type SightingDetail = {
   id: string;
   photoUrl: string | null;
@@ -26,8 +44,9 @@ export type SightingDetail = {
   category: string | null;
   createdAtLabel: string | null;
   observerName: string;
-  speciesSlug: string | null;
-  speciesCommonName: string | null;
+  suggestedName: string | null;
+  displayedSpecies: SightingSpecies | null;
+  identifications: SightingIdentification[];
   comments: SightingComment[];
 };
 
@@ -52,6 +71,68 @@ function photoUrlFor(
   }
 
   return supabase.storage.from("photos").getPublicUrl(photoPath).data.publicUrl;
+}
+
+function toSpecies(row: {
+  id: string;
+  common_name: string;
+  scientific_name: string | null;
+  slug: string | null;
+} | null): SightingSpecies | null {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    commonName: row.common_name,
+    scientificName: row.scientific_name,
+    slug: row.slug,
+  };
+}
+
+function displayedSpeciesId(
+  identifications: { species_id: string }[],
+  observationSpeciesId: string | null,
+) {
+  const counts = new Map<string, number>();
+
+  for (const row of identifications) {
+    counts.set(row.species_id, (counts.get(row.species_id) ?? 0) + 1);
+  }
+
+  let winner: string | null = null;
+  let winnerCount = 0;
+
+  for (const [speciesId, count] of counts) {
+    if (count >= 2 && count > winnerCount) {
+      winner = speciesId;
+      winnerCount = count;
+    }
+  }
+
+  if (winner) {
+    return winner;
+  }
+
+  return observationSpeciesId;
+}
+
+function identificationAuthorName(params: {
+  identificationUserId: string | null;
+  observationUserId: string | null;
+  isAnonymous: boolean;
+  displayName: string | null | undefined;
+}) {
+  if (
+    params.isAnonymous &&
+    params.identificationUserId &&
+    params.identificationUserId === params.observationUserId
+  ) {
+    return "Anonymous";
+  }
+
+  return params.displayName || "User";
 }
 
 async function displayNamesByUserId(
@@ -128,7 +209,7 @@ export async function getSighting(
   const { data: observation, error: observationError } = await supabase
     .from("observations")
     .select(
-      "id, user_id, photo_path, notes, category, is_anonymous, created_at, species_id",
+      "id, user_id, photo_path, notes, category, is_anonymous, created_at, species_id, suggested_name",
     )
     .eq("id", id)
     .maybeSingle();
@@ -141,42 +222,63 @@ export async function getSighting(
     return { sighting: null, error: null };
   }
 
-  const { data: comments, error: commentsError } = await supabase
-    .from("comments")
-    .select("id, body, user_id, created_at")
-    .eq("observation_id", id)
-    .order("created_at", { ascending: true });
+  const [commentsResult, identificationsResult] = await Promise.all([
+    supabase
+      .from("comments")
+      .select("id, body, user_id, created_at")
+      .eq("observation_id", id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("identifications")
+      .select("id, user_id, species_id, note, created_at")
+      .eq("observation_id", id)
+      .order("created_at", { ascending: true }),
+  ]);
 
-  if (commentsError) {
-    return { sighting: null, error: commentsError.message };
+  if (commentsResult.error) {
+    return { sighting: null, error: commentsResult.error.message };
   }
 
-  const commentRows = comments ?? [];
+  if (identificationsResult.error) {
+    return { sighting: null, error: identificationsResult.error.message };
+  }
+
+  const commentRows = commentsResult.data ?? [];
+  const identificationRows = identificationsResult.data ?? [];
+  const speciesIds = [
+    ...identificationRows.map((row) => row.species_id),
+    ...(observation.species_id ? [observation.species_id] : []),
+  ];
+  const uniqueSpeciesIds = [...new Set(speciesIds.filter(Boolean))];
+
+  const { data: speciesRows } =
+    uniqueSpeciesIds.length > 0
+      ? await supabase
+          .from("species")
+          .select("id, common_name, scientific_name, slug")
+          .in("id", uniqueSpeciesIds)
+      : { data: [] as { id: string; common_name: string; scientific_name: string | null; slug: string | null }[] };
+
+  const speciesById = new Map(
+    (speciesRows ?? []).map((row) => [row.id, toSpecies(row)]),
+  );
+
   const profileIds = [
-    ...(!observation.is_anonymous && observation.user_id
-      ? [observation.user_id]
-      : []),
+    ...(observation.user_id ? [observation.user_id] : []),
     ...commentRows
       .map((comment) => comment.user_id)
       .filter((userId): userId is string => Boolean(userId)),
+    ...identificationRows.map((row) => row.user_id),
   ];
   const names = await displayNamesByUserId(supabase, profileIds);
 
-  let speciesSlug: string | null = null;
-  let speciesCommonName: string | null = null;
-
-  if (observation.species_id) {
-    const { data: species } = await supabase
-      .from("species")
-      .select("slug, common_name")
-      .eq("id", observation.species_id)
-      .maybeSingle();
-
-    if (species?.slug) {
-      speciesSlug = species.slug;
-      speciesCommonName = species.common_name;
-    }
-  }
+  const consensusId = displayedSpeciesId(
+    identificationRows,
+    observation.species_id,
+  );
+  const displayedSpecies = consensusId
+    ? (speciesById.get(consensusId) ?? null)
+    : null;
 
   const observerName = observation.is_anonymous
     ? "Anonymous"
@@ -191,8 +293,26 @@ export async function getSighting(
       category: observation.category,
       createdAtLabel: formatDate(observation.created_at),
       observerName,
-      speciesSlug,
-      speciesCommonName,
+      suggestedName: observation.suggested_name,
+      displayedSpecies,
+      identifications: identificationRows.map((row) => {
+        const species = speciesById.get(row.species_id);
+        return {
+          id: row.id,
+          speciesId: row.species_id,
+          commonName: species?.commonName ?? "Unknown species",
+          scientificName: species?.scientificName ?? null,
+          slug: species?.slug ?? null,
+          note: row.note,
+          authorName: identificationAuthorName({
+            identificationUserId: row.user_id,
+            observationUserId: observation.user_id,
+            isAnonymous: Boolean(observation.is_anonymous),
+            displayName: names.get(row.user_id),
+          }),
+          createdAtLabel: formatDate(row.created_at),
+        };
+      }),
       comments: commentRows.map((comment) => ({
         id: comment.id,
         body: comment.body,

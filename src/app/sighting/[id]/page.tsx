@@ -2,13 +2,41 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import CommentForm from "./CommentForm";
-import { getSighting } from "@/lib/observations";
+import IdentificationForm from "./IdentificationForm";
+import { getSighting, type SightingSpecies } from "@/lib/observations";
 import { categoryLabel } from "@/lib/categories";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { getSpeciesOptions } from "@/lib/species";
+import { titleCaseCommonName } from "@/lib/species-names";
 
 type SightingPageProps = {
   params: Promise<{ id: string }>;
 };
+
+function SpeciesLine({ species }: { species: SightingSpecies }) {
+  const name = titleCaseCommonName(species.commonName);
+  const label = (
+    <>
+      {name}
+      {species.scientificName ? (
+        <span className="italic text-stone-500"> {species.scientificName}</span>
+      ) : null}
+    </>
+  );
+
+  if (!species.slug) {
+    return <span>{label}</span>;
+  }
+
+  return (
+    <Link
+      href={`/species/${species.slug}`}
+      className="font-medium text-[#2d6a4f] underline decoration-[#d8e3d4] underline-offset-4 hover:text-[#1b4332]"
+    >
+      {label}
+    </Link>
+  );
+}
 
 export async function generateMetadata({
   params,
@@ -21,17 +49,20 @@ export async function generateMetadata({
   }
 
   return {
-    title: sighting.category
-      ? `${categoryLabel(sighting.category)} sighting`
-      : "Sighting",
+    title: sighting.displayedSpecies
+      ? titleCaseCommonName(sighting.displayedSpecies.commonName)
+      : sighting.category
+        ? `${categoryLabel(sighting.category)} sighting`
+        : "Sighting",
   };
 }
 
 export default async function SightingPage({ params }: SightingPageProps) {
   const { id } = await params;
-  const [{ sighting, error }, user] = await Promise.all([
+  const [{ sighting, error }, user, speciesOptions] = await Promise.all([
     getSighting(id),
     getCurrentUser(),
+    getSpeciesOptions(),
   ]);
 
   if (error) {
@@ -49,6 +80,10 @@ export default async function SightingPage({ params }: SightingPageProps) {
     notFound();
   }
 
+  const heading = sighting.displayedSpecies
+    ? titleCaseCommonName(sighting.displayedSpecies.commonName)
+    : categoryLabel(sighting.category) || "Sighting";
+
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16 sm:px-8">
       <p className="text-sm">
@@ -60,28 +95,18 @@ export default async function SightingPage({ params }: SightingPageProps) {
         </Link>
       </p>
       <h1 className="mt-4 text-4xl font-semibold tracking-tight text-[#1b4332]">
-        {categoryLabel(sighting.category) || "Sighting"}
+        {heading}
       </h1>
       <p className="mt-2 text-sm text-stone-500">
         {sighting.observerName}
         {sighting.createdAtLabel ? ` · ${sighting.createdAtLabel}` : ""}
       </p>
-      {sighting.speciesSlug && sighting.speciesCommonName ? (
-        <p className="mt-3 text-sm">
-          <Link
-            href={`/species/${sighting.speciesSlug}`}
-            className="font-medium text-[#2d6a4f] underline decoration-[#d8e3d4] underline-offset-4 hover:text-[#1b4332]"
-          >
-            {sighting.speciesCommonName}
-          </Link>
-        </p>
-      ) : null}
 
       {sighting.photoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={sighting.photoUrl}
-          alt={categoryLabel(sighting.category) || "Sighting"}
+          alt={heading}
           className="mt-8 w-full rounded-xl border border-[#d8e3d4] object-cover"
         />
       ) : null}
@@ -89,6 +114,96 @@ export default async function SightingPage({ params }: SightingPageProps) {
       {sighting.notes ? (
         <p className="mt-6 text-base leading-7 text-stone-600">{sighting.notes}</p>
       ) : null}
+
+      <section className="mt-12">
+        <h2 className="text-2xl font-semibold tracking-tight text-[#1b4332]">
+          Displayed ID
+        </h2>
+        <p className="mt-4 text-base text-stone-700">
+          {sighting.displayedSpecies ? (
+            <SpeciesLine species={sighting.displayedSpecies} />
+          ) : (
+            "Not identified."
+          )}
+        </p>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-2xl font-semibold tracking-tight text-[#1b4332]">
+          AI guess
+        </h2>
+        {sighting.suggestedName ? (
+          <>
+            <p className="mt-4 text-base text-stone-700">
+              {sighting.suggestedName}
+            </p>
+            <p className="mt-1 text-sm text-stone-500">Not confirmed.</p>
+          </>
+        ) : (
+          <p className="mt-4 text-sm text-stone-500">No AI guess.</p>
+        )}
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-2xl font-semibold tracking-tight text-[#1b4332]">
+          Identifications
+        </h2>
+        {sighting.identifications.length === 0 ? (
+          <p className="mt-4 text-sm text-stone-500">
+            No community identifications yet.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-4">
+            {sighting.identifications.map((identification) => (
+              <li
+                key={identification.id}
+                className="rounded-xl border border-[#d8e3d4] bg-[#fbfaf6] p-4"
+              >
+                <p className="text-sm font-medium text-[#1b4332]">
+                  {identification.authorName}
+                </p>
+                <p className="mt-1 text-sm text-stone-700">
+                  <SpeciesLine
+                    species={{
+                      id: identification.speciesId,
+                      commonName: identification.commonName,
+                      scientificName: identification.scientificName,
+                      slug: identification.slug,
+                    }}
+                  />
+                </p>
+                {identification.note ? (
+                  <p className="mt-2 text-sm leading-6 text-stone-600">
+                    {identification.note}
+                  </p>
+                ) : null}
+                {identification.createdAtLabel ? (
+                  <p className="mt-2 text-xs text-stone-500">
+                    {identification.createdAtLabel}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {user ? (
+          <IdentificationForm
+            observationId={sighting.id}
+            speciesOptions={speciesOptions}
+          />
+        ) : (
+          <p className="mt-6 text-sm text-stone-600">
+            <Link
+              href="/signin"
+              className="font-medium text-[#2d6a4f] underline decoration-[#d8e3d4] underline-offset-4 hover:text-[#1b4332]"
+            >
+              Sign in
+            </Link>{" "}
+            to add an identification.
+          </p>
+        )}
+      </section>
 
       <section className="mt-12">
         <h2 className="text-2xl font-semibold tracking-tight text-[#1b4332]">

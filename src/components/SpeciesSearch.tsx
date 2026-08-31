@@ -13,6 +13,7 @@ type SpeciesSearchProps = {
   species: SpeciesOption[];
   selectedId: string;
   onSelect: (species: SpeciesOption | null) => void;
+  inputId?: string;
 };
 
 function matchesQuery(item: SpeciesOption, query: string) {
@@ -28,6 +29,7 @@ export default function SpeciesSearch({
   species,
   selectedId,
   onSelect,
+  inputId = "species",
 }: SpeciesSearchProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -131,7 +133,7 @@ export default function SpeciesSearch({
   return (
     <div ref={rootRef} className="relative">
       <input
-        id="species"
+        id={inputId}
         className="mt-1 w-full rounded-lg border border-[#d8e3d4] bg-white px-3 py-2 text-stone-800 outline-none focus:border-[#2d6a4f]"
         type="text"
         name="species-search"

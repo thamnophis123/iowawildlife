@@ -15,7 +15,7 @@ import {
 } from "@/lib/categories";
 import type { SpeciesOption } from "@/lib/species";
 import { matchSpeciesByName, titleCaseCommonName } from "@/lib/species-names";
-import SpeciesSearch from "./SpeciesSearch";
+import SpeciesSearch from "@/components/SpeciesSearch";
 
 type IdentifyGuess = {
   unknown: boolean;
