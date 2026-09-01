@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/supabase/server";
 const navLinks = [
   { href: "/", label: "Home" },
   { href: "/map", label: "Map" },
+  { href: "/species", label: "Species" },
   { href: "/upload", label: "Upload" },
 ] as const;
 
@@ -19,7 +20,7 @@ export default async function Header() {
         >
           Iowa Wildlife
         </Link>
-        <nav aria-label="Main" className="flex items-center gap-5 text-sm">
+        <nav aria-label="Main" className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:gap-5">
           {navLinks.map((link) => (
             <Link
               key={link.href}

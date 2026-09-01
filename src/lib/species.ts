@@ -40,6 +40,17 @@ export type SpeciesDetail = {
   sightings: SpeciesSighting[];
 };
 
+export type SpeciesIndexItem = {
+  id: string;
+  slug: string;
+  commonName: string;
+  scientificName: string | null;
+  category: string;
+  status: string | null;
+  hasAccountText: boolean;
+  onTheMap: boolean;
+};
+
 function formatDate(value: string | null) {
   if (!value) {
     return null;
@@ -131,6 +142,113 @@ export async function getSpeciesOptions(): Promise<SpeciesOption[]> {
   return dedupeSpeciesByScientificName(options).sort((a, b) =>
     a.commonName.localeCompare(b.commonName, "en"),
   );
+}
+
+export async function getSpeciesIndex(): Promise<{
+  species: SpeciesIndexItem[];
+  error: string | null;
+}> {
+  if (!getSupabaseEnv()) {
+    return { species: [], error: "Species are unavailable right now." };
+  }
+
+  const supabase = await createClient();
+  const pageSize = 1000;
+  const rows: {
+    id: string;
+    slug: string | null;
+    common_name: string;
+    scientific_name: string | null;
+    category: string;
+    status: string | null;
+    short_summary: string | null;
+    inat_taxon_id: number | null;
+  }[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("species")
+      .select(
+        "id, slug, common_name, scientific_name, category, status, short_summary, inat_taxon_id",
+      )
+      .not("slug", "is", null)
+      .neq("slug", "")
+      .order("common_name", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      return { species: [], error: error.message };
+    }
+
+    if (!data?.length) {
+      break;
+    }
+
+    for (const row of data) {
+      rows.push(row);
+    }
+
+    if (data.length < pageSize) {
+      break;
+    }
+  }
+
+  const onTheMap = new Set<string>();
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("observations")
+      .select("species_id")
+      .not("species_id", "is", null)
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      return { species: [], error: error.message };
+    }
+
+    if (!data?.length) {
+      break;
+    }
+
+    for (const row of data) {
+      if (row.species_id) {
+        onTheMap.add(row.species_id);
+      }
+    }
+
+    if (data.length < pageSize) {
+      break;
+    }
+  }
+
+  const withNames = rows
+    .filter((row): row is typeof row & { slug: string } => Boolean(row.slug))
+    .map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      commonName: titleCaseCommonName(row.common_name),
+      scientificName: textOrNull(row.scientific_name),
+      category: row.category,
+      status: textOrNull(row.status),
+      hasAccountText: Boolean(textOrNull(row.short_summary)),
+      onTheMap: onTheMap.has(row.id),
+      inatTaxonId: numberOrNull(row.inat_taxon_id),
+    }));
+
+  const species = dedupeSpeciesByScientificName(withNames)
+    .sort((a, b) => a.commonName.localeCompare(b.commonName, "en"))
+    .map((item) => ({
+      id: item.id,
+      slug: item.slug,
+      commonName: item.commonName,
+      scientificName: item.scientificName,
+      category: item.category,
+      status: item.status,
+      hasAccountText: item.hasAccountText,
+      onTheMap: item.onTheMap,
+    }));
+
+  return { species, error: null };
 }
 
 export async function getSpeciesBySlug(
