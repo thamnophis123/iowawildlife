@@ -6,6 +6,7 @@ const navLinks = [
   { href: "/map", label: "Map" },
   { href: "/species", label: "Species" },
   { href: "/upload", label: "Upload" },
+  { href: "/contact", label: "Contact" },
 ] as const;
 
 export default async function Header() {
