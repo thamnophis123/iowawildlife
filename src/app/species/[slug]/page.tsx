@@ -33,26 +33,13 @@ function SpeciesField({
   );
 }
 
-function grokipediaPageUrl(scientificName: string | null) {
-  const slug = scientificName?.trim().replace(/\s+/g, "_");
-  if (!slug) {
-    return null;
-  }
-
-  return `https://grokipedia.com/page/${slug}`;
-}
-
 function sourceLabel(url: string) {
   try {
     const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, "");
-    if (host === "inaturalist.org") {
+    if (parsed.hostname.replace(/^www\./, "") === "inaturalist.org") {
       return "iNaturalist";
     }
-    if (host === "grokipedia.com") {
-      return "Grokipedia";
-    }
-    return host || url;
+    return parsed.hostname.replace(/^www\./, "") || url;
   } catch {
     return url;
   }
@@ -61,7 +48,6 @@ function sourceLabel(url: string) {
 function speciesSourceLinks(
   sourceUrls: string[],
   inatTaxonId: number | null,
-  scientificName: string | null,
 ) {
   const links = [...sourceUrls];
   if (inatTaxonId != null) {
@@ -81,22 +67,6 @@ function speciesSourceLinks(
       links.push(inatUrl);
     }
   }
-
-  const grokipediaUrl = grokipediaPageUrl(scientificName);
-  if (grokipediaUrl) {
-    const alreadyListed = links.some((url) => {
-      try {
-        const parsed = new URL(url);
-        return parsed.hostname.replace(/^www\./, "") === "grokipedia.com";
-      } catch {
-        return url === grokipediaUrl;
-      }
-    });
-    if (!alreadyListed) {
-      links.push(grokipediaUrl);
-    }
-  }
-
   return links;
 }
 
@@ -134,11 +104,9 @@ export default async function SpeciesPage({ params }: SpeciesPageProps) {
 
   const commonName = titleCaseCommonName(species.commonName);
   const category = categoryLabel(species.category) || species.category;
-  const grokipediaUrl = grokipediaPageUrl(species.scientificName);
   const sourceLinks = speciesSourceLinks(
     species.sourceUrls,
     species.inatTaxonId,
-    species.scientificName,
   );
   const mapPins = species.sightings.flatMap((sighting) => {
     if (sighting.lat == null || sighting.lng == null) {
@@ -207,12 +175,6 @@ export default async function SpeciesPage({ params }: SpeciesPageProps) {
               </li>
             ))}
           </ul>
-          {grokipediaUrl ? (
-            <p className="mt-3 text-sm text-stone-500">
-              Grokipedia is a separate encyclopedia. We link to it; the text on
-              this page is our own short Iowa summary.
-            </p>
-          ) : null}
         </section>
       ) : null}
 
