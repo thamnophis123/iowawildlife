@@ -45,6 +45,37 @@ function sourceLabel(url: string) {
   }
 }
 
+function licenseLabel(code: string) {
+  return code.trim().toUpperCase();
+}
+
+function speciesImageCaption({
+  attribution,
+  license,
+  sourceUrl,
+}: {
+  attribution: string | null;
+  license: string | null;
+  sourceUrl: string | null;
+}) {
+  const parts: string[] = [];
+  if (attribution) {
+    parts.push(attribution);
+  }
+  if (license) {
+    const label = licenseLabel(license);
+    if (!attribution?.toLowerCase().includes(label.toLowerCase())) {
+      parts.push(label);
+    }
+  }
+
+  if (parts.length === 0 && !sourceUrl) {
+    return null;
+  }
+
+  return { text: parts.join(" · "), sourceUrl };
+}
+
 function speciesSourceLinks(
   sourceUrls: string[],
   inatTaxonId: number | null,
@@ -104,6 +135,20 @@ export default async function SpeciesPage({ params }: SpeciesPageProps) {
 
   const commonName = titleCaseCommonName(species.commonName);
   const category = categoryLabel(species.category) || species.category;
+  const hasObservationPhotos = species.sightings.some(
+    (sighting) => sighting.photoUrl,
+  );
+  const fallbackCaption = hasObservationPhotos
+    ? null
+    : speciesImageCaption({
+        attribution: species.imageAttribution,
+        license: species.imageLicense,
+        sourceUrl: species.imageSourceUrl,
+      });
+  const fallbackImage =
+    !hasObservationPhotos && species.imageUrl && fallbackCaption
+      ? { url: species.imageUrl, caption: fallbackCaption }
+      : null;
   const sourceLinks = speciesSourceLinks(
     species.sourceUrls,
     species.inatTaxonId,
@@ -149,6 +194,37 @@ export default async function SpeciesPage({ params }: SpeciesPageProps) {
         <p className="mt-4 rounded-xl border border-[#d8e3d4] bg-[#fbfaf6] p-4 text-sm text-[#1b4332]">
           This species is sensitive.
         </p>
+      ) : null}
+
+      {fallbackImage ? (
+        <figure className="mt-8 overflow-hidden rounded-xl border border-[#d8e3d4] bg-[#fbfaf6]">
+          <div className="flex max-h-[260px] items-center justify-center bg-stone-200">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={fallbackImage.url}
+              alt={commonName}
+              className="h-auto max-h-[260px] w-auto max-w-full object-contain"
+            />
+          </div>
+          <figcaption className="px-4 py-3 text-sm text-stone-500">
+            {fallbackImage.caption.text ? (
+              <span>{fallbackImage.caption.text}</span>
+            ) : null}
+            {fallbackImage.caption.sourceUrl ? (
+              <>
+                {fallbackImage.caption.text ? " · " : null}
+                <a
+                  href={fallbackImage.caption.sourceUrl}
+                  className="font-medium text-[#2d6a4f] underline decoration-[#d8e3d4] underline-offset-4 hover:text-[#1b4332]"
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  iNaturalist
+                </a>
+              </>
+            ) : null}
+          </figcaption>
+        </figure>
       ) : null}
 
       <SpeciesField heading="Summary" text={species.shortSummary} />

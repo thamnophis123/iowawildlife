@@ -37,6 +37,10 @@ export type SpeciesDetail = {
   sourceUrls: string[];
   inatTaxonId: number | null;
   isSensitive: boolean;
+  imageUrl: string | null;
+  imageAttribution: string | null;
+  imageLicense: string | null;
+  imageSourceUrl: string | null;
   sightings: SpeciesSighting[];
 };
 
@@ -263,13 +267,30 @@ export async function getSpeciesBySlug(
   }
 
   const supabase = await createClient();
-  const { data: row, error } = await supabase
+  const detailColumns =
+    "id, slug, common_name, scientific_name, category, status, short_summary, id_tips, habitat, similar_species, source_urls, inat_taxon_id, is_sensitive, image_url, image_attribution, image_license, image_source_url";
+  let { data: row, error } = await supabase
     .from("species")
-    .select(
-      "id, slug, common_name, scientific_name, category, status, short_summary, id_tips, habitat, similar_species, source_urls, inat_taxon_id, is_sensitive",
-    )
+    .select(detailColumns)
     .eq("slug", slug)
     .maybeSingle();
+
+  if (
+    error?.message.includes("image_url") ||
+    error?.message.includes("image_attribution") ||
+    error?.message.includes("image_license") ||
+    error?.message.includes("image_source_url")
+  ) {
+    const retry = await supabase
+      .from("species")
+      .select(
+        "id, slug, common_name, scientific_name, category, status, short_summary, id_tips, habitat, similar_species, source_urls, inat_taxon_id, is_sensitive",
+      )
+      .eq("slug", slug)
+      .maybeSingle();
+    row = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     return { species: null, error: error.message };
@@ -305,6 +326,14 @@ export async function getSpeciesBySlug(
       sourceUrls: sourceUrlsFrom(row.source_urls),
       inatTaxonId: numberOrNull(row.inat_taxon_id),
       isSensitive: Boolean(row.is_sensitive),
+      imageUrl: textOrNull("image_url" in row ? row.image_url : null),
+      imageAttribution: textOrNull(
+        "image_attribution" in row ? row.image_attribution : null,
+      ),
+      imageLicense: textOrNull("image_license" in row ? row.image_license : null),
+      imageSourceUrl: textOrNull(
+        "image_source_url" in row ? row.image_source_url : null,
+      ),
       sightings: (observations ?? []).map((observation) => ({
         id: observation.id,
         photoUrl: photoUrlFor(supabase, observation.photo_path),
