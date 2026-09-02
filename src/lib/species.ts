@@ -107,6 +107,22 @@ function sourceUrlsFrom(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function speciesImageFields(row: {
+  image_url?: string | null;
+  image_attribution?: string | null;
+  image_attr?: string | null;
+  image_license?: string | null;
+  image_source_url?: string | null;
+} | null) {
+  return {
+    imageUrl: textOrNull(row?.image_url),
+    imageAttribution:
+      textOrNull(row?.image_attribution) ?? textOrNull(row?.image_attr),
+    imageLicense: textOrNull(row?.image_license),
+    imageSourceUrl: textOrNull(row?.image_source_url),
+  };
+}
+
 export async function getSpeciesOptions(): Promise<SpeciesOption[]> {
   if (!getSupabaseEnv()) {
     return [];
@@ -267,28 +283,56 @@ export async function getSpeciesBySlug(
   }
 
   const supabase = await createClient();
-  const detailColumns =
-    "id, slug, common_name, scientific_name, category, status, short_summary, id_tips, habitat, similar_species, source_urls, inat_taxon_id, is_sensitive, image_url, image_attribution, image_license, image_source_url";
+  const baseColumns =
+    "id, slug, common_name, scientific_name, category, status, short_summary, id_tips, habitat, similar_species, source_urls, inat_taxon_id, is_sensitive";
   let { data: row, error } = await supabase
     .from("species")
-    .select(detailColumns)
+    .select(
+      `${baseColumns}, image_url, image_attribution, image_license, image_source_url`,
+    )
     .eq("slug", slug)
     .maybeSingle();
 
+  if (error?.message.includes("image_attribution")) {
+    const retry = await supabase
+      .from("species")
+      .select(
+        `${baseColumns}, image_url, image_attr, image_license, image_source_url`,
+      )
+      .eq("slug", slug)
+      .maybeSingle();
+    row = retry.data
+      ? {
+          ...retry.data,
+          image_url: retry.data.image_url ?? null,
+          image_attribution: retry.data.image_attr ?? null,
+          image_license: retry.data.image_license ?? null,
+          image_source_url: retry.data.image_source_url ?? null,
+        }
+      : null;
+    error = retry.error;
+  }
+
   if (
     error?.message.includes("image_url") ||
-    error?.message.includes("image_attribution") ||
+    error?.message.includes("image_attr") ||
     error?.message.includes("image_license") ||
     error?.message.includes("image_source_url")
   ) {
     const retry = await supabase
       .from("species")
-      .select(
-        "id, slug, common_name, scientific_name, category, status, short_summary, id_tips, habitat, similar_species, source_urls, inat_taxon_id, is_sensitive",
-      )
+      .select(baseColumns)
       .eq("slug", slug)
       .maybeSingle();
-    row = retry.data;
+    row = retry.data
+      ? {
+          ...retry.data,
+          image_url: null,
+          image_attribution: null,
+          image_license: null,
+          image_source_url: null,
+        }
+      : null;
     error = retry.error;
   }
 
@@ -326,14 +370,7 @@ export async function getSpeciesBySlug(
       sourceUrls: sourceUrlsFrom(row.source_urls),
       inatTaxonId: numberOrNull(row.inat_taxon_id),
       isSensitive: Boolean(row.is_sensitive),
-      imageUrl: textOrNull("image_url" in row ? row.image_url : null),
-      imageAttribution: textOrNull(
-        "image_attribution" in row ? row.image_attribution : null,
-      ),
-      imageLicense: textOrNull("image_license" in row ? row.image_license : null),
-      imageSourceUrl: textOrNull(
-        "image_source_url" in row ? row.image_source_url : null,
-      ),
+      ...speciesImageFields(row),
       sightings: (observations ?? []).map((observation) => ({
         id: observation.id,
         photoUrl: photoUrlFor(supabase, observation.photo_path),
